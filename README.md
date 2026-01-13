@@ -150,3 +150,17 @@ docker build -t flask-resume-app .
 # Run the container
 docker run -d -p 5001:5001 flask-resume-app
 ```
+## CI/CD Pipeline
+This project uses **GitHub Actions** to automate the build and deployment process.
+
+### Workflow Process:
+1. **Trigger**: Every push to the `main` branch triggers the workflow.
+2. **Build**: A GitHub-hosted runner checks out the code and builds a Docker image.
+3. **Authentication**: The runner authenticates with AWS using IAM credentials stored in GitHub Secrets.
+4. **Versioning**: The image is tagged with the unique `GITHUB_SHA` for traceability and also updated as `latest`.
+5. **Push**: The image is pushed to **Amazon Elastic Container Registry (ECR)**.
+
+### Secrets Configuration
+To run this pipeline, the following secrets must be configured in GitHub Settings:
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
