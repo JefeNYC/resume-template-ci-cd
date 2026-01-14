@@ -1,21 +1,22 @@
 FROM python:3.9-slim
 
-# 1. Set the working directory
+# Set the working directory
 WORKDIR /app
 
-# 2. Fix OS-level vulnerabilities (Best Practice)
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+# 1. Force update the OS and the core Python 'setuptools' package 
+# We do this in one layer to ensure the fix is applied immediately.
+RUN apt-get update && apt-get upgrade -y && \
+    pip install --no-cache-dir --upgrade pip setuptools && \
+    rm -rf /var/lib/apt/lists/*
 
-# 3. Fix the specific 'setuptools' vulnerability (Task 10 Fix)
-RUN pip install --no-cache-dir --upgrade setuptools
-
-# 4. Copy your project files
+# 2. Copy your requirements and project files
+COPY requirements.txt .
 COPY . .
 
-# 5. Install your app dependencies
+# 3. Install your specific app dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 6. Metadata and Execution
+# 4. Config & Launch
 EXPOSE 5001
 
 ENV FLASK_APP=app.py
