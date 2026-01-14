@@ -1,16 +1,41 @@
+# The 'name' is what appears in the GitHub Actions tab in your browser.
 name: Build and Push to ECR
 
+# 'on' defines the trigger. This workflow runs every time code is pushed to the 'main' branch.
 on:
   push:
     branches: [ "main" ]
 
+# A workflow is made of one or more 'jobs' that can run in parallel or sequentially.
 jobs:
   deploy:
+    # 'runs-on' specifies the Virtual Machine type. 'ubuntu-latest' is a fresh Linux VM provided by GitHub.
     runs-on: ubuntu-latest
+    
     steps:
+    # 1. 'checkout' clones your repository code into the Virtual Machine so the runner can see your files.
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    # 2. We build the image locally first. This creates the container in the VM's memory without needing AWS yet.
+    # We use 'github.sha' (the unique commit ID) as the tag for precise version tracking.
+    - name: Build Local Image
+      run: |
+        docker build -t resume-app:${{ github.sha }} .
+
+    # 3. Security Scanning. 
+    # Trivy looks inside the local image we just built to find known vulnerabilities (CVEs).
+    # 'exit-code: 1' means: "If you find CRITICAL or HIGH risks, stop the whole pipeline and fail."
+    - name: Scan Image for Vulnerabilities
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'resume-app:${{ github.sha }}'
+        format: 'table'
+        exit-code: '1'
+        severity: 'CRITICAL,HIGH'
+
+    # 4. Authentication: This step uses your GitHub Secrets to log into your AWS account.
+    # It sets up the AWS CLI environment inside the runner VM.
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -18,21 +43,26 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
+    # 5. This action performs a 'docker login' to your specific AWS ECR registry.
+    # We give it an 'id' so we can reference the registry URL in the next step.
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build, Tag, and Push Image
+    # 6. Final Step: Prepare the image for AWS and upload it.
+    - name: Tag and Push Image
       env:
+        # We pull the registry URL (e.g., 123456789.dkr.ecr...) from the previous step's outputs.
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: resume-app
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build the image with the unique Commit SHA
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        # Also tag it as 'latest' so the most recent build is easy to find
-        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        # We re-tag the safe, scanned local image with the full AWS registry path.
+        docker tag resume-app:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         
-        # Push both tags
+        # We also tag it as 'latest' so our production server always knows which image is the newest.
+        docker tag resume-app:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        # Finally, we push both the unique version and the 'latest' version to the cloud.
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
